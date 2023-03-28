@@ -13,6 +13,9 @@ var DING_SOUND_PATH = "sounds/iphone-ding-sound.mp3"
 
 func main() {
 
+	cancel := make(chan bool)
+	restart := make(chan bool)
+	skip := make(chan bool)
 	t, err := timer.New(timer.Config{
 		Intervals: 10,
 		IntervalLength: timer.Interval{
@@ -25,7 +28,7 @@ func main() {
 		},
 		SoundPath:       DING_SOUND_PATH,
 		RestBeforeStart: true,
-	})
+	}, cancel, restart, skip)
 	if err != nil {
 		log.Fatalf("error creating timer: %v", err)
 	}

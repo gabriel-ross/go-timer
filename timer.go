@@ -25,6 +25,9 @@ type timer struct {
 	rest            Interval
 	sound           Stream
 	restBeforeStart bool
+	cancel          <-chan bool
+	restart         <-chan bool
+	skip            <-chan bool
 }
 
 type Stream struct {
@@ -37,7 +40,7 @@ type Interval struct {
 	Seconds int64
 }
 
-func New(cnf Config) (*timer, error) {
+func New(cnf Config, cancel, restart, skip <-chan bool) (*timer, error) {
 	var err error
 	f, err := os.Open(cnf.SoundPath)
 	if err != nil {
@@ -58,6 +61,9 @@ func New(cnf Config) (*timer, error) {
 			StartPosition: streamer.Position(),
 		},
 		restBeforeStart: cnf.RestBeforeStart,
+		cancel:          cancel,
+		restart:         restart,
+		skip:            skip,
 	}, nil
 }
 
@@ -94,35 +100,67 @@ func (t timer) PlaySound(stream Stream, done chan<- bool) {
 
 func (t timer) Countdown(i Interval, name string) {
 	fmt.Println(name)
+	pollingRate := 10 * time.Millisecond
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	done := make(chan bool)
+	intervalTimer := time.NewTimer(time.Duration(i.Minutes)*time.Minute + time.Duration(i.Seconds)*time.Second)
 	remaining := Interval{
 		Minutes: i.Minutes,
 		Seconds: i.Seconds,
 	}
 
-	go func() {
-		time.Sleep((time.Duration(i.Minutes) * time.Minute) + (time.Duration(i.Seconds) * time.Second))
-		done <- true
-	}()
-
-	for remaining.Minutes >= 0 {
-		fmt.Println(remaining.String())
+	for range time.Tick(pollingRate) {
 		select {
-		case <-done:
-			print("00:00 done!\n")
+		case <-intervalTimer.C:
+			fmt.Println("timer expired")
 			return
+		case <-t.skip:
+			fmt.Println("timer skipped")
+			return
+		case <-t.cancel:
+			return
+		case <-t.restart:
+			remaining.Minutes = i.Minutes
+			remaining.Seconds = i.Seconds
 		case <-ticker.C:
+			fmt.Println(remaining.String())
 			switch {
-			case remaining.Seconds <= 0:
+			case remaining.Minutes > 0 && remaining.Seconds == 0:
 				remaining.Minutes--
 				remaining.Seconds = 59
-			default:
+			case remaining.Seconds > 0:
 				remaining.Seconds--
+			case remaining.Minutes == 0 && remaining.Seconds == 0:
+				fmt.Println("timer expired with zero minutes and seconds")
+				return
+			default:
+				fmt.Println("encountered error")
 			}
 		}
 	}
+
+	// done := make(chan bool)
+	// go func() {
+	// 	time.Sleep((time.Duration(i.Minutes) * time.Minute) + (time.Duration(i.Seconds) * time.Second))
+	// 	done <- true
+	// }()
+
+	// for remaining.Minutes >= 0 {
+	// 	fmt.Println(remaining.String())
+	// 	select {
+	// 	case <-done:
+	// 		print("00:00 done!\n")
+	// 		return
+	// 	case <-ticker.C:
+	// 		switch {
+	// 		case remaining.Seconds <= 0:
+	// 			remaining.Minutes--
+	// 			remaining.Seconds = 59
+	// 		default:
+	// 			remaining.Seconds--
+	// 		}
+	// 	}
+	// }
 }
 
 func (i *Interval) String() string {
