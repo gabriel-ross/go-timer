@@ -2,6 +2,8 @@ package main
 
 import (
 	"time"
+
+	"github.com/gabriel-ross/timer-go"
 )
 
 var TIMEOUT = 2 * time.Second
@@ -47,4 +49,20 @@ func main() {
 	// 	}
 	// }
 
+	t := timer.Timer{
+		Intervals: 5,
+		IntervalLength: timer.Interval{
+			Minutes: 0,
+			Seconds: 5,
+		},
+		Rest: timer.Interval{
+			Minutes: 0,
+			Seconds: 5,
+		},
+		IntervalSound:   "",
+		RestSound:       "",
+		RestBeforeStart: false,
+	}
+
+	t.Start()
 }

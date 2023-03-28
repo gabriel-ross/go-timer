@@ -8,10 +8,10 @@ import (
 
 type Timer struct {
 	Intervals       int
-	Rest            Interval
 	IntervalLength  Interval
+	Rest            Interval
+	IntervalSound   string
 	RestSound       string
-	StartSound      string
 	RestBeforeStart bool
 }
 
@@ -20,7 +20,23 @@ type Interval struct {
 	Seconds int64
 }
 
-func (i Interval) Countdown() {
+// TODO: Display remaining time and count down
+
+func (t Timer) Start() {
+	if t.RestBeforeStart {
+		print("resting before start")
+	}
+
+	for i := 1; i <= t.Intervals-1; i++ {
+		t.Countdown(t.IntervalLength, fmt.Sprintf("Interval %d/%d", i, t.Intervals), t.IntervalSound)
+		t.Countdown(t.Rest, "Rest", t.RestSound)
+	}
+	t.Countdown(t.IntervalLength, fmt.Sprintf("Interval %d/%d", t.Intervals, t.Intervals), t.IntervalSound)
+}
+
+// TODO: add end sound
+func (t Timer) Countdown(i Interval, name, endSound string) {
+	fmt.Println(name)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	done := make(chan bool)
@@ -63,12 +79,4 @@ func (i *Interval) String() string {
 	builder.WriteString(fmt.Sprintf("%d", i.Seconds))
 
 	return builder.String()
-}
-
-// TODO: Display remaining time and count down
-
-func (t Timer) Start() {
-	if t.RestBeforeStart {
-		print("resting before start")
-	}
 }
