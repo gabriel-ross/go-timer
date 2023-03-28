@@ -2,17 +2,34 @@ package timer
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/faiface/beep"
+	"github.com/faiface/beep/mp3"
+	"github.com/faiface/beep/speaker"
 )
 
-type Timer struct {
+type Config struct {
 	Intervals       int
 	IntervalLength  Interval
 	Rest            Interval
-	IntervalSound   string
-	RestSound       string
+	SoundPath       string
 	RestBeforeStart bool
+}
+
+type timer struct {
+	intervals       int
+	intervalLength  Interval
+	rest            Interval
+	sound           Stream
+	restBeforeStart bool
+}
+
+type Stream struct {
+	Streamer      beep.StreamSeekCloser
+	StartPosition int
 }
 
 type Interval struct {
@@ -20,46 +37,91 @@ type Interval struct {
 	Seconds int64
 }
 
-// TODO: Display remaining time and count down
-
-func (t Timer) Start() {
-	if t.RestBeforeStart {
-		print("resting before start")
+func New(cnf Config) (*timer, error) {
+	var err error
+	f, err := os.Open(cnf.SoundPath)
+	if err != nil {
+		return nil, err
+	}
+	streamer, format, err := mp3.Decode(f)
+	if err != nil {
+		return nil, err
 	}
 
-	for i := 1; i <= t.Intervals-1; i++ {
-		t.Countdown(t.IntervalLength, fmt.Sprintf("Interval %d/%d", i, t.Intervals), t.IntervalSound)
-		t.Countdown(t.Rest, "Rest", t.RestSound)
+	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	return &timer{
+		intervals:      cnf.Intervals,
+		intervalLength: cnf.IntervalLength,
+		rest:           cnf.Rest,
+		sound: Stream{
+			Streamer:      streamer,
+			StartPosition: streamer.Position(),
+		},
+		restBeforeStart: cnf.RestBeforeStart,
+	}, nil
+}
+
+func (t timer) Close() {
+	t.sound.Streamer.Close()
+}
+
+func (t timer) Start() string {
+	if t.restBeforeStart {
+		t.Countdown(t.rest, "Starting")
+		t.PlaySound(t.sound, nil)
 	}
-	t.Countdown(t.IntervalLength, fmt.Sprintf("Interval %d/%d", t.Intervals, t.Intervals), t.IntervalSound)
+
+	for i := 1; i <= t.intervals-1; i++ {
+		t.Countdown(t.intervalLength, fmt.Sprintf("Interval %d/%d", i, t.intervals))
+		t.PlaySound(t.sound, nil)
+		t.Countdown(t.rest, "Rest")
+		t.PlaySound(t.sound, nil)
+	}
+	t.Countdown(t.intervalLength, fmt.Sprintf("Interval %d/%d", t.intervals, t.intervals))
+	t.PlaySound(t.sound, nil)
+	return "timer done!"
+}
+
+func (t timer) PlaySound(stream Stream, done chan<- bool) {
+	speaker.Clear()
+	stream.Streamer.Seek(stream.StartPosition)
+	speaker.Play(beep.Seq(stream.Streamer, beep.Callback(func() {
+		if done != nil {
+			done <- true
+		}
+	})))
 }
 
 // TODO: add end sound
-func (t Timer) Countdown(i Interval, name, endSound string) {
+func (t timer) Countdown(i Interval, name string) {
 	fmt.Println(name)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	done := make(chan bool)
+	remaining := Interval{
+		Minutes: i.Minutes,
+		Seconds: i.Seconds,
+	}
 
 	go func() {
 		time.Sleep((time.Duration(i.Minutes) * time.Minute) + (time.Duration(i.Seconds) * time.Second))
 		done <- true
 	}()
 
-	for i.Minutes >= 0 {
+	for remaining.Minutes >= 0 {
+		fmt.Println(remaining.String())
 		select {
 		case <-done:
 			print("00:00 done!\n")
 			return
 		case <-ticker.C:
 			switch {
-			case i.Seconds <= 0:
-				i.Minutes--
-				i.Seconds = 59
+			case remaining.Seconds <= 0:
+				remaining.Minutes--
+				remaining.Seconds = 59
 			default:
-				i.Seconds--
+				remaining.Seconds--
 			}
-			fmt.Println(i.String())
 		}
 	}
 }

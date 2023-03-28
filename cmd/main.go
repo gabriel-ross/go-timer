@@ -2,58 +2,76 @@ package main
 
 import (
 	"log"
-	"os"
 	"time"
 
-	"github.com/faiface/beep"
-	"github.com/faiface/beep/mp3"
-	"github.com/faiface/beep/speaker"
+	"github.com/gabriel-ross/timer-go"
 )
 
 var TIMEOUT = 2 * time.Second
+var DING_SOUND_PATH = "sounds/iphone-ding-sound.mp3"
 
 func main() {
-	f, err := os.Open("sounds/iphone-ding-sound.mp3")
+
+	t, err := timer.New(timer.Config{
+		Intervals: 10,
+		IntervalLength: timer.Interval{
+			Minutes: 0,
+			Seconds: 5,
+		},
+		Rest: timer.Interval{
+			Minutes: 0,
+			Seconds: 8,
+		},
+		SoundPath:       DING_SOUND_PATH,
+		RestBeforeStart: true,
+	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error creating timer: %v", err)
 	}
+	defer t.Close()
+	t.Start()
 
-	streamer, format, err := mp3.Decode(f)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer streamer.Close()
+	// f, err := os.Open("sounds/iphone-ding-sound.mp3")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-	done := make(chan bool)
+	// streamer, format, err := mp3.Decode(f)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// defer streamer.Close()
 
-	startPos := streamer.Position()
+	// speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	// done := make(chan bool)
 
-	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-		done <- true
-	})))
-	select {
-	case <-done:
-		print("done \n")
-	case <-time.After(TIMEOUT):
-		print("timed out 1\n")
-	}
-	speaker.Clear()
+	// startPos := streamer.Position()
 
-	err = streamer.Seek(startPos)
-	if err != nil {
-		log.Fatalf("\nerror seeking: %v\n", err)
-	}
-	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-		done <- true
-	})))
-	select {
-	case <-done:
-		print("done 2")
-	case <-time.After(TIMEOUT):
-		print("timed out 2")
-	}
-	speaker.Clear()
+	// speaker.Play(beep.Seq(streamer, beep.Callback(func() {
+	// 	done <- true
+	// })))
+	// select {
+	// case <-done:
+	// 	print("done \n")
+	// case <-time.After(TIMEOUT):
+	// 	print("timed out 1\n")
+	// }
+	// speaker.Clear()
+
+	// err = streamer.Seek(startPos)
+	// if err != nil {
+	// 	log.Fatalf("\nerror seeking: %v\n", err)
+	// }
+	// speaker.Play(beep.Seq(streamer, beep.Callback(func() {
+	// 	done <- true
+	// })))
+	// select {
+	// case <-done:
+	// 	print("done 2")
+	// case <-time.After(TIMEOUT):
+	// 	print("timed out 2")
+	// }
+	// speaker.Clear()
 
 	// ticker := time.NewTicker(time.Second)
 	// defer ticker.Stop()
