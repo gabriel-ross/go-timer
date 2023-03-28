@@ -1,36 +1,59 @@
 package main
 
 import (
+	"log"
+	"os"
 	"time"
 
-	"github.com/gabriel-ross/timer-go"
+	"github.com/faiface/beep"
+	"github.com/faiface/beep/mp3"
+	"github.com/faiface/beep/speaker"
 )
 
 var TIMEOUT = 2 * time.Second
 
 func main() {
-	// f, err := os.Open("sounds/iphone-ding-sound.mp3")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	f, err := os.Open("sounds/iphone-ding-sound.mp3")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// streamer, format, err := mp3.Decode(f)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer streamer.Close()
+	streamer, format, err := mp3.Decode(f)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer streamer.Close()
 
-	// speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-	// done := make(chan bool)
-	// speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-	// 	done <- true
-	// })))
-	// select {
-	// case <-done:
-	// 	print("done")
-	// case <-time.After(TIMEOUT):
-	// 	print("timed out")
-	// }
+	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	done := make(chan bool)
+
+	startPos := streamer.Position()
+
+	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
+		done <- true
+	})))
+	select {
+	case <-done:
+		print("done \n")
+	case <-time.After(TIMEOUT):
+		print("timed out 1\n")
+	}
+	speaker.Clear()
+
+	err = streamer.Seek(startPos)
+	if err != nil {
+		log.Fatalf("\nerror seeking: %v\n", err)
+	}
+	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
+		done <- true
+	})))
+	select {
+	case <-done:
+		print("done 2")
+	case <-time.After(TIMEOUT):
+		print("timed out 2")
+	}
+	speaker.Clear()
 
 	// ticker := time.NewTicker(time.Second)
 	// defer ticker.Stop()
@@ -49,20 +72,20 @@ func main() {
 	// 	}
 	// }
 
-	t := timer.Timer{
-		Intervals: 5,
-		IntervalLength: timer.Interval{
-			Minutes: 0,
-			Seconds: 5,
-		},
-		Rest: timer.Interval{
-			Minutes: 0,
-			Seconds: 5,
-		},
-		IntervalSound:   "",
-		RestSound:       "",
-		RestBeforeStart: false,
-	}
+	// t := timer.Timer{
+	// 	Intervals: 5,
+	// 	IntervalLength: timer.Interval{
+	// 		Minutes: 0,
+	// 		Seconds: 5,
+	// 	},
+	// 	Rest: timer.Interval{
+	// 		Minutes: 0,
+	// 		Seconds: 5,
+	// 	},
+	// 	IntervalSound:   "",
+	// 	RestSound:       "",
+	// 	RestBeforeStart: false,
+	// }
 
-	t.Start()
+	// t.Start()
 }
