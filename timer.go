@@ -100,7 +100,6 @@ func (t timer) PlaySound(stream Stream, done chan<- bool) {
 
 func (t timer) Countdown(i Interval, name string) {
 	fmt.Println(name)
-	pollingRate := 10 * time.Millisecond
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	intervalTimer := time.NewTimer(time.Duration(i.Minutes)*time.Minute + time.Duration(i.Seconds)*time.Second)
@@ -109,7 +108,7 @@ func (t timer) Countdown(i Interval, name string) {
 		Seconds: i.Seconds,
 	}
 
-	for range time.Tick(pollingRate) {
+	for {
 		select {
 		case <-intervalTimer.C:
 			fmt.Println("timer expired")
