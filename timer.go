@@ -92,7 +92,6 @@ func (t timer) PlaySound(stream Stream, done chan<- bool) {
 	})))
 }
 
-// TODO: add end sound
 func (t timer) Countdown(i Interval, name string) {
 	fmt.Println(name)
 	ticker := time.NewTicker(time.Second)
