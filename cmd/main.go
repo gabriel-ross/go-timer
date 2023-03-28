@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -29,7 +30,7 @@ func main() {
 		log.Fatalf("error creating timer: %v", err)
 	}
 	defer t.Close()
-	t.Start()
+	fmt.Println(t.Start())
 
 	// f, err := os.Open("sounds/iphone-ding-sound.mp3")
 	// if err != nil {
