@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/gabriel-ross/timer-go"
@@ -33,7 +34,21 @@ func main() {
 		log.Fatalf("error creating timer: %v", err)
 	}
 	defer t.Close()
-	fmt.Println(t.Start())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		fmt.Println(t.Start())
+		wg.Done()
+	}()
+
+	time.Sleep(2 * time.Second)
+	skip <- true
+	time.Sleep(2 * time.Second)
+	restart <- true
+	time.Sleep(2 * time.Second)
+	cancel <- true
+	wg.Wait()
 
 	// f, err := os.Open("sounds/iphone-ding-sound.mp3")
 	// if err != nil {
