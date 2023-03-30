@@ -117,6 +117,7 @@ func (t timer) Countdown(i Interval, name string) {
 			fmt.Println("timer skipped")
 			return
 		case <-t.cancel:
+			// ?: should I use timer.Stop() here?
 			return
 		case <-t.restart:
 			remaining.Minutes = i.Minutes
