@@ -1,128 +1,33 @@
 package main
 
 import (
-	"fmt"
-	"log"
-	"sync"
-	"time"
-
 	"github.com/gabriel-ross/timer-go"
 )
 
-var TIMEOUT = 2 * time.Second
-var DING_SOUND_PATH = "sounds/iphone-ding-sound.mp3"
+var (
+	MAX_INTERVALS = 99
+	SOUND_PATHS   = map[string]string{
+		"ding": "sounds/iphone-ding-sound.mp3",
+	}
+	WINDOW_WIDTH  float32 = 300
+	WINDOW_HEIGHT float32 = 800
 
-func main() {
-
-	cancel := make(chan bool)
-	restart := make(chan bool)
-	skip := make(chan bool)
-	t, err := timer.New(timer.Config{
-		Intervals: 10,
+	default_timer_config = timer.Config{
+		Intervals: 1,
 		IntervalLength: timer.Interval{
 			Minutes: 0,
-			Seconds: 5,
+			Seconds: 30,
 		},
 		Rest: timer.Interval{
 			Minutes: 0,
-			Seconds: 8,
+			Seconds: 5,
 		},
-		SoundPath:       DING_SOUND_PATH,
-		RestBeforeStart: true,
-	}, cancel, restart, skip)
-	if err != nil {
-		log.Fatalf("error creating timer: %v", err)
+		SoundPath:       SOUND_PATHS["ding"],
+		RestBeforeStart: false,
 	}
-	defer t.Close()
+)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		fmt.Println(t.Start())
-		wg.Done()
-	}()
-
-	time.Sleep(2 * time.Second)
-	skip <- true
-	time.Sleep(2 * time.Second)
-	restart <- true
-	time.Sleep(2 * time.Second)
-	cancel <- true
-	wg.Wait()
-
-	// f, err := os.Open("sounds/iphone-ding-sound.mp3")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// streamer, format, err := mp3.Decode(f)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer streamer.Close()
-
-	// speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-	// done := make(chan bool)
-
-	// startPos := streamer.Position()
-
-	// speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-	// 	done <- true
-	// })))
-	// select {
-	// case <-done:
-	// 	print("done \n")
-	// case <-time.After(TIMEOUT):
-	// 	print("timed out 1\n")
-	// }
-	// speaker.Clear()
-
-	// err = streamer.Seek(startPos)
-	// if err != nil {
-	// 	log.Fatalf("\nerror seeking: %v\n", err)
-	// }
-	// speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-	// 	done <- true
-	// })))
-	// select {
-	// case <-done:
-	// 	print("done 2")
-	// case <-time.After(TIMEOUT):
-	// 	print("timed out 2")
-	// }
-	// speaker.Clear()
-
-	// ticker := time.NewTicker(time.Second)
-	// defer ticker.Stop()
-	// done := make(chan bool)
-	// go func() {
-	// 	time.Sleep(10 * time.Second)
-	// 	done <- true
-	// }()
-	// for {
-	// 	select {
-	// 	case <-done:
-	// 		fmt.Println("Done!")
-	// 		return
-	// 	case t := <-ticker.C:
-	// 		fmt.Println("Current time: ", t)
-	// 	}
-	// }
-
-	// t := timer.Timer{
-	// 	Intervals: 5,
-	// 	IntervalLength: timer.Interval{
-	// 		Minutes: 0,
-	// 		Seconds: 5,
-	// 	},
-	// 	Rest: timer.Interval{
-	// 		Minutes: 0,
-	// 		Seconds: 5,
-	// 	},
-	// 	IntervalSound:   "",
-	// 	RestSound:       "",
-	// 	RestBeforeStart: false,
-	// }
-
-	// t.Start()
+func main() {
+	app := timer.New()
+	app.Start()
 }

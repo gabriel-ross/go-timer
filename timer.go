@@ -19,17 +19,22 @@ type Config struct {
 	RestBeforeStart bool
 }
 
-type timer struct {
+type countdownTimer struct {
 	intervals       int
 	intervalLength  Interval
 	rest            Interval
 	sound           Stream
 	restBeforeStart bool
-	skip            <-chan bool
-	cancel          <-chan bool
-	restart         <-chan bool
-	done            chan bool
-	cancelFlag      bool
+	pauseC          chan bool
+	resumeC         chan bool
+	skipC           chan bool
+	cancelC         chan bool
+	restartC        chan bool
+	doneC           chan bool
+	timeRemaining   chan string
+	intervalName    chan string
+	paused          bool
+	cancelled       bool
 }
 
 type Stream struct {
@@ -38,11 +43,11 @@ type Stream struct {
 }
 
 type Interval struct {
-	Minutes int64
-	Seconds int64
+	Minutes int
+	Seconds int
 }
 
-func New(cnf Config, cancel, skip, restart <-chan bool) (*timer, error) {
+func NewTimer(cnf Config) (*countdownTimer, error) {
 	var err error
 	f, err := os.Open(cnf.SoundPath)
 	if err != nil {
@@ -54,7 +59,7 @@ func New(cnf Config, cancel, skip, restart <-chan bool) (*timer, error) {
 	}
 
 	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-	return &timer{
+	return &countdownTimer{
 		intervals:      cnf.Intervals,
 		intervalLength: cnf.IntervalLength,
 		rest:           cnf.Rest,
@@ -63,46 +68,81 @@ func New(cnf Config, cancel, skip, restart <-chan bool) (*timer, error) {
 			StartPosition: streamer.Position(),
 		},
 		restBeforeStart: cnf.RestBeforeStart,
-		cancel:          cancel,
-		restart:         restart,
-		skip:            skip,
-		done:            make(chan bool),
+		pauseC:          make(chan bool),
+		resumeC:         make(chan bool),
+		cancelC:         make(chan bool),
+		restartC:        make(chan bool),
+		skipC:           make(chan bool),
+		doneC:           make(chan bool),
+		timeRemaining:   make(chan string, 61),
+		intervalName:    make(chan string, cnf.Intervals),
+		paused:          false,
+		cancelled:       false,
 	}, nil
 }
 
-func (t timer) Close() {
+func (t *countdownTimer) Close() {
 	t.sound.Streamer.Close()
 }
 
-func (t timer) Start() string {
-
+// Start starts the countdownTimer asynchronously.
+func (t *countdownTimer) Start() {
+	t.cancelled = false
 	go func() {
 		if t.restBeforeStart {
-			t.Countdown(t.rest, "Rest")
-			t.PlaySound(t.sound, nil)
+			t.CountdownWithSound(t.rest, "Rest", t.sound, nil)
 		}
-		for i := 1; i <= t.intervals-1; i++ {
-			t.Countdown(t.intervalLength, fmt.Sprintf("Interval %d/%d", i, t.intervals))
-			t.PlaySound(t.sound, nil)
-			t.Countdown(t.rest, "Rest")
-			t.PlaySound(t.sound, nil)
+		for i := 1; i <= t.intervals-1 && !t.cancelled; i++ {
+			t.CountdownWithSound(t.intervalLength, fmt.Sprintf("Interval %d/%d", i, t.intervals), t.sound, nil)
+			t.CountdownWithSound(t.rest, "Rest", t.sound, nil)
 		}
-		t.Countdown(t.intervalLength, fmt.Sprintf("Interval %d/%d", t.intervals, t.intervals))
+		t.CountdownWithSound(t.intervalLength, fmt.Sprintf("Interval %d/%d", t.intervals, t.intervals), t.sound, nil)
 		t.PlaySound(t.sound, nil)
-		t.done <- true
+		t.doneC <- true
 	}()
+}
 
-	select {
-	case <-t.done:
-		return "timer done!"
-	case <-t.cancel:
-		t.cancelFlag = true
-		return "timer cancelled!"
+// Pause pauses the current interval countdown timer if not already paused.
+func (t *countdownTimer) Pause() {
+	if !t.paused {
+		t.pauseC <- true
 	}
 }
 
-func (t timer) PlaySound(stream Stream, done chan<- bool) {
-	if !t.cancelFlag {
+// Resume resumes the current interval countdown timer if paused.
+func (t *countdownTimer) Resume() {
+	if t.paused {
+		t.resumeC <- true
+	}
+}
+
+// Skip skips the current interval countdownTimer. done is an optional
+// channel. If done != nil it will receive a value when Cancel finishes.
+func (t *countdownTimer) Skip() {
+	t.skipC <- true
+}
+
+// Restart asynchronously restarts the current interval countdownTimer. done is an
+// optional channel. If done != nil it will receive a value when Cancel
+// finishes.
+func (t *countdownTimer) Restart() {
+	t.restartC <- true
+}
+
+// Cancel asynchronously cancels the countdownTimer. done is an optional channel. If
+// done != nil it will receive a value when Cancel finishes.
+func (t *countdownTimer) Cancel() {
+	t.cancelled = true
+	t.cancelC <- true
+}
+
+// Done returns a channel indicating the countdownTimer has finished.
+func (t *countdownTimer) Done() <-chan bool {
+	return t.doneC
+}
+
+func (t *countdownTimer) PlaySound(stream Stream, done chan<- bool) {
+	if !t.cancelled {
 		speaker.Clear()
 		stream.Streamer.Seek(stream.StartPosition)
 		speaker.Play(beep.Seq(stream.Streamer, beep.Callback(func() {
@@ -113,34 +153,40 @@ func (t timer) PlaySound(stream Stream, done chan<- bool) {
 	}
 }
 
-func (t timer) Countdown(i Interval, name string) {
-	if !t.cancelFlag {
-		fmt.Println(name)
-		totalDuration := time.Duration(i.Minutes)*time.Minute + time.Duration(i.Seconds)*time.Second
+func (t *countdownTimer) CountdownWithSound(i Interval, name string, stream Stream, done chan<- bool) {
+	if !t.cancelled {
+		t.intervalName <- name
 		ticker := time.NewTicker(time.Second)
-		intervalTimer := time.NewTimer(totalDuration)
 		defer ticker.Stop()
-		defer intervalTimer.Stop()
 		remaining := Interval{
 			Minutes: i.Minutes,
 			Seconds: i.Seconds,
 		}
 
-		for !t.cancelFlag {
+		for !t.cancelled {
+
+			// Check if pause signal has been received. If it has block until
+			// resume or cancel signal received.
 			select {
-			case <-intervalTimer.C:
-				fmt.Println("countdown expired")
+			case <-t.pauseC:
+				t.paused = true
+				select {
+				case <-t.resumeC:
+					t.paused = false
+				case <-t.cancelC:
+					return
+				}
+			default:
+			}
+
+			select {
+			case <-t.skipC:
 				return
-			case <-t.skip:
-				fmt.Println("countdown skipped")
-				return
-			case <-t.restart:
-				fmt.Println("countdown restarted")
+			case <-t.restartC:
 				remaining.Minutes = i.Minutes
 				remaining.Seconds = i.Seconds
-				intervalTimer.Reset(totalDuration)
 			case <-ticker.C:
-				fmt.Println(remaining.String())
+				t.timeRemaining <- remaining.String()
 				switch {
 				case remaining.Minutes > 0 && remaining.Seconds == 0:
 					remaining.Minutes--
@@ -148,37 +194,13 @@ func (t timer) Countdown(i Interval, name string) {
 				case remaining.Seconds > 0:
 					remaining.Seconds--
 				case remaining.Minutes == 0 && remaining.Seconds == 0:
-					fmt.Println("timer expired with zero minutes and seconds")
+					t.PlaySound(stream, done)
 					return
 				default:
-					fmt.Println("encountered error")
 				}
 			}
 		}
 	}
-
-	// done := make(chan bool)
-	// go func() {
-	// 	time.Sleep((time.Duration(i.Minutes) * time.Minute) + (time.Duration(i.Seconds) * time.Second))
-	// 	done <- true
-	// }()
-
-	// for remaining.Minutes >= 0 {
-	// 	fmt.Println(remaining.String())
-	// 	select {
-	// 	case <-done:
-	// 		print("00:00 done!\n")
-	// 		return
-	// 	case <-ticker.C:
-	// 		switch {
-	// 		case remaining.Seconds <= 0:
-	// 			remaining.Minutes--
-	// 			remaining.Seconds = 59
-	// 		default:
-	// 			remaining.Seconds--
-	// 		}
-	// 	}
-	// }
 }
 
 func (i *Interval) String() string {
