@@ -1,4 +1,4 @@
-package main
+package timer
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"github.com/faiface/beep/speaker"
 )
 
-type Config struct {
+type timerConfig struct {
 	Intervals       int
 	IntervalLength  Interval
 	Rest            Interval
@@ -47,7 +47,7 @@ type Interval struct {
 	Seconds int
 }
 
-func NewTimer(cnf Config) (*countdownTimer, error) {
+func NewTimer(cnf timerConfig) (*countdownTimer, error) {
 	var err error
 	f, err := os.Open(cnf.SoundPath)
 	if err != nil {

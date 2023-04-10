@@ -1,4 +1,4 @@
-package main
+package timer
 
 import (
 	"strconv"
@@ -14,14 +14,16 @@ import (
 )
 
 var (
-	MAX_INTERVALS = 99
-	SOUND_PATHS   = map[string]string{
+	MAX_DIGIT_OPTIONS = 99
+	DIGITS            = genDigitListOptions(MAX_DIGIT_OPTIONS)
+	DIGIT_MAP         = genDigitMap(DIGITS)
+	SOUND_PATHS       = map[string]string{
 		"ding": "sounds/iphone-ding-sound.mp3",
 	}
 	WINDOW_WIDTH  float32 = 300
 	WINDOW_HEIGHT float32 = 800
 
-	default_timer_config = Config{
+	default_timer_config = timerConfig{
 		Intervals: 1,
 		IntervalLength: Interval{
 			Minutes: 0,
@@ -36,24 +38,34 @@ var (
 	}
 )
 
-type timerApp struct {
+type Config struct {
+	MaxIntervals        int
+	MaxIntervalDuration Interval
+}
+
+type application struct {
 	gui                 fyne.App
 	menuWindow          fyne.Window
 	timerWindow         fyne.Window
 	intervalNameDisplay binding.String
 	timerDisplay        binding.String
 	timer               *countdownTimer
-	timerCnf            Config
+	timerCnf            timerConfig
+	cnf                 Config
+	numIntervalOptions  []string
+	numIntervalDigitMap map[string]int
 }
 
-func New() *timerApp {
-	a := &timerApp{
+func New(cnf Config) *application {
+	a := &application{
 		gui:                 app.New(),
 		timer:               &countdownTimer{},
 		timerCnf:            default_timer_config,
 		intervalNameDisplay: binding.NewString(),
 		timerDisplay:        binding.NewString(),
 	}
+	a.numIntervalOptions = genDigitListOptions(cnf.MaxIntervals)
+	a.numIntervalDigitMap = genDigitMap(a.numIntervalOptions)
 	a.intervalNameDisplay.Set("Starting")
 	a.timerDisplay.Set("00:00")
 	a.menuWindow = a.configureMenuWindow()
@@ -62,48 +74,57 @@ func New() *timerApp {
 	return a
 }
 
-func (a *timerApp) Start() {
+func (a *application) Start() {
 	a.menuWindow.Show()
 	a.gui.Run()
 }
 
-func (a *timerApp) configureMenuWindow() fyne.Window {
+func (a *application) configureMenuWindow() fyne.Window {
 	w := a.gui.NewWindow("menu")
 
-	numIntervalOptions := widget.NewSelect(genNumIntervalOptions(), func(s string) {})
+	numIntervalOptions := widget.NewSelect(a.numIntervalOptions, func(s string) {
+		a.timerCnf.Intervals = a.numIntervalDigitMap[s]
+	})
 	numIntervalOptions.SetSelectedIndex(0)
-	soundOptions := widget.NewSelect(genSoundOptions(), func(s string) {})
+
+	soundOptions := widget.NewSelect(genMapListOptions(SOUND_PATHS), func(s string) {})
 	soundOptions.SetSelectedIndex(0)
 
-	restMinsText := binding.NewString()
-	restSecsText := binding.NewString()
-	restMins := binding.StringToInt(restMinsText)
-	restSecs := binding.StringToInt(restSecsText)
-	restMinsEntry := widget.NewEntryWithData(restMinsText)
-	restSecsEntry := widget.NewEntryWithData(restSecsText)
-	restMinsEntry.Wrapping = fyne.TextWrapOff
-	restSecsEntry.Wrapping = fyne.TextWrapOff
-	restMinsEntry.Validator = validateDigitString
-	restSecsEntry.Validator = validateDigitString
-	restMinsEntry.PlaceHolder = "MM"
-	restSecsEntry.PlaceHolder = "SS"
-	restLength := container.New(layout.NewHBoxLayout(), restMinsEntry, widget.NewLabel(":"), restSecsEntry)
+	intervalDurationMins := &widget.Select{
+		Options:     a.numIntervalOptions,
+		PlaceHolder: "MM",
+		OnChanged: func(s string) {
+			a.timerCnf.IntervalLength.Minutes = a.numIntervalDigitMap[s]
+		},
+	}
+	intervalDurationSecs := &widget.Select{
+		Options:     a.numIntervalOptions,
+		PlaceHolder: "SS",
+		OnChanged: func(s string) {
+			a.timerCnf.IntervalLength.Seconds = a.numIntervalDigitMap[s]
+		},
+	}
+	intervalLength := container.New(layout.NewHBoxLayout(), intervalDurationMins, widget.NewLabel(":"), intervalDurationSecs)
 
-	intervalMinsText := binding.NewString()
-	intervalSecsText := binding.NewString()
-	intervalMins := binding.StringToInt(intervalMinsText)
-	intervalSecs := binding.StringToInt(intervalSecsText)
-	intervalMinsEntry := widget.NewEntryWithData(intervalMinsText)
-	intervalSecsEntry := widget.NewEntryWithData(intervalSecsText)
-	intervalMinsEntry.Wrapping = fyne.TextWrapOff
-	intervalSecsEntry.Wrapping = fyne.TextWrapOff
-	intervalMinsEntry.Validator = validateDigitString
-	intervalSecsEntry.Validator = validateDigitString
-	intervalMinsEntry.PlaceHolder = "MM"
-	intervalSecsEntry.PlaceHolder = "SS"
-	intervalLength := container.New(layout.NewHBoxLayout(), intervalMinsEntry, widget.NewLabel(":"), intervalSecsEntry)
+	restDurationMins := &widget.Select{
+		Options:     a.numIntervalOptions,
+		PlaceHolder: "MM",
+		OnChanged: func(s string) {
+			a.timerCnf.Rest.Minutes = a.numIntervalDigitMap[s]
+		},
+	}
+	restDurationSecs := &widget.Select{
+		Options:     a.numIntervalOptions,
+		PlaceHolder: "SS",
+		OnChanged: func(s string) {
+			a.timerCnf.Rest.Seconds = a.numIntervalDigitMap[s]
+		},
+	}
+	restLength := container.New(layout.NewHBoxLayout(), restDurationMins, widget.NewLabel(":"), restDurationSecs)
 
-	restBeforeStart := widget.NewCheck("", nil)
+	restBeforeStart := widget.NewCheck("", func(checked bool) {
+		a.timerCnf.RestBeforeStart = checked
+	})
 
 	form := &widget.Form{
 		Items: []*widget.FormItem{ // we can specify items in the constructor
@@ -115,21 +136,14 @@ func (a *timerApp) configureMenuWindow() fyne.Window {
 		},
 	}
 	start := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
-		a.timerCnf.Rest.Minutes, _ = restMins.Get()
-		a.timerCnf.Rest.Seconds, _ = restSecs.Get()
-		a.timerCnf.IntervalLength.Minutes, _ = intervalMins.Get()
-		a.timerCnf.IntervalLength.Seconds, _ = intervalSecs.Get()
-		a.timerCnf.Intervals, _ = strconv.Atoi(numIntervalOptions.Selected)
-		a.timerCnf.SoundPath = SOUND_PATHS[soundOptions.Selected]
-		a.timerCnf.RestBeforeStart = restBeforeStart.Checked
-		a.runAndDisplayTimer()
+		a.runTimerAndDisplay()
 	})
 
 	w.SetContent(container.NewBorder(nil, start, nil, nil, form))
 	return w
 }
 
-func (a *timerApp) runAndDisplayTimer() {
+func (a *application) runTimerAndDisplay() {
 	t, err := NewTimer(a.timerCnf)
 	if err != nil {
 		dialog.ShowError(err, a.menuWindow)
@@ -155,7 +169,7 @@ func (a *timerApp) runAndDisplayTimer() {
 	a.swapWindow(a.timerWindow, a.menuWindow)
 }
 
-func (a *timerApp) configureTimerWindow() fyne.Window {
+func (a *application) configureTimerWindow() fyne.Window {
 	w := a.gui.NewWindow("timer")
 
 	intervalName := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
@@ -188,46 +202,55 @@ func (a *timerApp) configureTimerWindow() fyne.Window {
 	return w
 }
 
-func (a *timerApp) swapWindow(cur fyne.Window, next fyne.Window) {
+func (a *application) swapWindow(cur fyne.Window, next fyne.Window) {
 	next.Show()
 	cur.Close()
 }
 
-func (a *timerApp) handlePauseButton() {
+func (a *application) handlePauseButton() {
 	a.timer.Pause()
 }
 
-func (a *timerApp) handleResumeButton() {
+func (a *application) handleResumeButton() {
 	a.timer.Resume()
 }
 
-func (a *timerApp) handleSkipButton() {
+func (a *application) handleSkipButton() {
 	a.timer.Skip()
 }
 
-func (a *timerApp) handleRestartButton() {
+func (a *application) handleRestartButton() {
 	a.timer.Restart()
 }
 
-func (a *timerApp) handleTimerStop() {
+func (a *application) handleTimerStop() {
 	a.timer.Cancel()
 	a.menuWindow.Show()
 }
 
-func genNumIntervalOptions() []string {
+func genDigitListOptions(max int) []string {
 	opts := []string{}
-	for i := 1; i <= 99; i++ {
+	for i := 1; i <= max; i++ {
 		opts = append(opts, strconv.Itoa(i))
 	}
 	return opts
 }
 
-func genSoundOptions() []string {
+func genMapListOptions(options map[string]string) []string {
 	opts := []string{}
-	for name := range SOUND_PATHS {
+	for name := range options {
 		opts = append(opts, name)
 	}
 	return opts
+}
+
+func genDigitMap(s []string) map[string]int {
+	dMap := map[string]int{}
+	startingVal, _ := strconv.Atoi(s[0])
+	for idx, val := range s {
+		dMap[val] = idx + startingVal
+	}
+	return dMap
 }
 
 func validateDigitString(s string) error {
