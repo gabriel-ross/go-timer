@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-// TODO:
-// add rest
-// add resting before start
-
 type Config struct {
 	Intervals       int
 	IntervalMinutes int64
@@ -30,6 +26,17 @@ type repeatTimer struct {
 }
 
 func NewRepeatCountdownTimer(cnf Config) *repeatTimer {
+	// Format interval and rest seconds so that they don't exceed 59. Add
+	// overflow to minutes
+	for cnf.IntervalSeconds > 59 {
+		cnf.IntervalMinutes++
+		cnf.IntervalSeconds -= 59
+	}
+	for cnf.RestSeconds > 59 {
+		cnf.RestMinutes++
+		cnf.RestSeconds -= 59
+	}
+
 	return &repeatTimer{
 		cnf:            cnf,
 		shouldRest:     cnf.RestBeforeStart,
@@ -125,7 +132,7 @@ func (c *countdownTimer) runInterval(remainingC chan<- string, mins, secs int64)
 		remainingMins, remainingSecs = mins, secs-1
 	case secs == 0 && mins > 0:
 		remainingMins, remainingSecs = mins-1, 59
-	default: // if they're both equal to zero
+	default: // if minutes and seconds are both zero
 		return
 	}
 
