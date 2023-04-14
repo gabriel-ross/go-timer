@@ -38,15 +38,19 @@ var (
 	}
 )
 
-type Config struct {
+type AppConfig struct {
 	MaxIntervals        int
 	MaxIntervalDuration Interval
 }
 
 type application struct {
-	gui                 fyne.App
-	menuWindow          fyne.Window
-	timerWindow         fyne.Window
+	gui         fyne.App
+	menuWindow  fyne.Window
+	timerWindow fyne.Window
+
+	timeRemainingDisplay binding.String
+	timerNameDisplay     binding.String
+
 	intervalNameDisplay binding.String
 	timerDisplay        binding.String
 	timer               *countdownTimer
@@ -77,6 +81,17 @@ func New(cnf Config) *application {
 func (a *application) Start() {
 	a.menuWindow.Show()
 	a.gui.Run()
+}
+
+func (a *application) configureSimpleViewWindow() fyne.Window {
+	w := a.gui.NewWindow("simple timer")
+	timerName := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
+	timerName.Bind(a.timerNameDisplay)
+	timeRemaining := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
+	timeRemaining.Bind(a.timerDisplay)
+	displayVBox := container.New(layout.NewVBoxLayout(), timerName, timeRemaining)
+
+	return w
 }
 
 func (a *application) configureMenuWindow() fyne.Window {
