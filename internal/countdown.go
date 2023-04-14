@@ -12,11 +12,11 @@ import (
 
 type Config struct {
 	Intervals       int
-	IntervalMinutes int
-	IntervalSeconds int
+	IntervalMinutes int64
+	IntervalSeconds int64
 	RestEnabled     bool
-	RestMinutes     int
-	RestSeconds     int
+	RestMinutes     int64
+	RestSeconds     int64
 	RestBeforeStart bool
 }
 
@@ -42,19 +42,20 @@ func NewRepeatCountdownTimer(cnf Config) *repeatTimer {
 
 func (t *repeatTimer) Start() {
 	t.reset()
+	writeOut(t.intervalNameC, "Starting")
 
 	if t.cnf.RestBeforeStart {
-		t.intervalNameC <- "Starting"
+		writeOut(t.intervalNameC, "Rest")
 		t.countdownTimer.runInterval(t.timeRemainingC, t.cnf.RestMinutes, t.cnf.RestSeconds)
 	}
 
 	interval := 1
 	for interval <= t.cnf.Intervals && !t.shouldCancel {
 		if t.shouldRest {
-			t.intervalNameC <- "Rest"
+			writeOut(t.intervalNameC, "Rest")
 			t.countdownTimer.runInterval(t.timeRemainingC, t.cnf.RestMinutes, t.cnf.RestSeconds)
 		} else {
-			t.intervalNameC <- fmt.Sprintf("Interval %d/%d", interval, t.cnf.Intervals)
+			writeOut(t.intervalNameC, fmt.Sprintf("Interval %d/%d", interval, t.cnf.Intervals))
 			t.countdownTimer.runInterval(t.timeRemainingC, t.cnf.IntervalMinutes, t.cnf.IntervalSeconds)
 			interval++
 		}
@@ -84,8 +85,7 @@ func (t *repeatTimer) TimeRemaining() <-chan string {
 func (t *repeatTimer) Cancel() {
 	t.shouldCancel = true
 	t.countdownTimer.cancel()
-	t.timeRemainingC <- "00:00"
-
+	writeOut(t.timeRemainingC, "00:00")
 }
 
 // Skip skips the current interval.
@@ -114,8 +114,21 @@ func newCountdownTimer() *countdownTimer {
 	}
 }
 
-func (c *countdownTimer) runInterval(remainingC chan<- string, mins, secs int) {
-	remainingMins, remainingSecs := mins, secs
+func (c *countdownTimer) runInterval(remainingC chan<- string, mins, secs int64) {
+	writeOut(remainingC, formatTimeRemaining(mins, secs))
+
+	// Decrement time before first tick, otherwise countdown is one second
+	// longer than intended
+	var remainingMins, remainingSecs int64
+	switch {
+	case secs > 0:
+		remainingMins, remainingSecs = mins, secs-1
+	case secs == 0 && mins > 0:
+		remainingMins, remainingSecs = mins-1, 59
+	default: // if they're both equal to zero
+		return
+	}
+
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -133,7 +146,7 @@ func (c *countdownTimer) runInterval(remainingC chan<- string, mins, secs int) {
 			remainingMins = mins
 			remainingSecs = secs
 		case <-ticker.C:
-			remainingC <- formatTimeRemaining(remainingMins, remainingSecs)
+			writeOut(remainingC, formatTimeRemaining(remainingMins, remainingSecs))
 			switch {
 			case remainingMins > 0 && remainingSecs == 0:
 				remainingMins--
@@ -147,7 +160,7 @@ func (c *countdownTimer) runInterval(remainingC chan<- string, mins, secs int) {
 	}
 }
 
-func formatTimeRemaining(mins, secs int) string {
+func formatTimeRemaining(mins, secs int64) string {
 	var builder strings.Builder
 	if mins < 10 {
 		builder.WriteString("0")
@@ -174,4 +187,14 @@ func (c *countdownTimer) Resume() {
 
 func (c *countdownTimer) restart() {
 	c.restartC <- true
+}
+
+// writeOut is a non-blocking helper function for writing outputs to channels.
+// It attempts to write to the specified channel, but skips the write if the
+// channel is full
+func writeOut(ch chan<- string, out string) {
+	select {
+	case ch <- out:
+	default:
+	}
 }
