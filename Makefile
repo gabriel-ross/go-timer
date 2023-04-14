@@ -3,3 +3,6 @@ run:
 
 build-ios:
 	fyne package --os ios -appID com.gabrielross.timer-go
+
+test:
+	go test ./...
