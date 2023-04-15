@@ -4,83 +4,26 @@ import (
 	"strconv"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/gabriel-ross/timer-go/internal"
 )
 
-var (
-	MAX_DIGIT_OPTIONS = 99
-	DIGITS            = genDigitListOptions(MAX_DIGIT_OPTIONS)
-	DIGIT_MAP         = genDigitMap(DIGITS)
-	SOUND_PATHS       = map[string]string{
-		"ding": "sounds/iphone-ding-sound.mp3",
-	}
-	WINDOW_WIDTH  float32 = 300
-	WINDOW_HEIGHT float32 = 800
+var DIGIT_MAP = genDigitStringToIntMap(100)
 
-	default_timer_config = timerConfig{
-		Intervals: 1,
-		IntervalLength: Interval{
-			Minutes: 0,
-			Seconds: 30,
-		},
-		Rest: Interval{
-			Minutes: 0,
-			Seconds: 5,
-		},
-		SoundPath:       SOUND_PATHS["ding"],
-		RestBeforeStart: false,
-	}
-)
-
-type AppConfig struct {
-	MaxIntervals        int
-	MaxIntervalDuration Interval
+type Config struct {
+	maxIntervals int
 }
 
 type application struct {
-	gui         fyne.App
-	menuWindow  fyne.Window
-	timerWindow fyne.Window
-
-	timeRemainingDisplay binding.String
+	gui                  fyne.App
+	cnf                  Config
+	timerConfig          *internal.Config
 	timerNameDisplay     binding.String
-
-	intervalNameDisplay binding.String
-	timerDisplay        binding.String
-	timer               *countdownTimer
-	timerCnf            timerConfig
-	cnf                 Config
-	numIntervalOptions  []string
-	numIntervalDigitMap map[string]int
-}
-
-func New(cnf Config) *application {
-	a := &application{
-		gui:                 app.New(),
-		timer:               &countdownTimer{},
-		timerCnf:            default_timer_config,
-		intervalNameDisplay: binding.NewString(),
-		timerDisplay:        binding.NewString(),
-	}
-	a.numIntervalOptions = genDigitListOptions(cnf.MaxIntervals)
-	a.numIntervalDigitMap = genDigitMap(a.numIntervalOptions)
-	a.intervalNameDisplay.Set("Starting")
-	a.timerDisplay.Set("00:00")
-	a.menuWindow = a.configureMenuWindow()
-	a.timerWindow = a.configureTimerWindow()
-
-	return a
-}
-
-func (a *application) Start() {
-	a.menuWindow.Show()
-	a.gui.Run()
+	timeRemainingDisplay binding.String
 }
 
 func (a *application) configureSimpleViewWindow() fyne.Window {
@@ -88,8 +31,20 @@ func (a *application) configureSimpleViewWindow() fyne.Window {
 	timerName := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
 	timerName.Bind(a.timerNameDisplay)
 	timeRemaining := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
-	timeRemaining.Bind(a.timerDisplay)
+	timeRemaining.Bind(a.timeRemainingDisplay)
 	displayVBox := container.New(layout.NewVBoxLayout(), timerName, timeRemaining)
+
+	intervalsSelect := widget.NewSelect(genIncrementingDigitStringSlice(1, a.cnf.maxIntervals), func(s string) {
+
+	})
+	resumeButton := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {})
+	pauseButton := widget.NewButtonWithIcon("", theme.MediaPauseIcon(), func() {})
+	skipButton := widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() {})
+	stopButton := widget.NewButtonWithIcon("", theme.MediaStopIcon(), func() {})
+	buttonGrid := container.New(layout.NewGridLayout(2), resumeButton, pauseButton, stopButton, skipButton)
+
+	windowVBox := container.New(layout.NewVBoxLayout(), displayVBox, layout.NewSpacer(), layout.NewSpacer(), buttonGrid)
+	w.SetContent(windowVBox)
 
 	return w
 }
@@ -150,105 +105,18 @@ func (a *application) configureMenuWindow() fyne.Window {
 			{Text: "Rest before start", Widget: restBeforeStart},
 		},
 	}
-	start := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {
-		a.runTimerAndDisplay()
-	})
+	start := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {})
 
 	w.SetContent(container.NewBorder(nil, start, nil, nil, form))
 	return w
 }
 
-func (a *application) runTimerAndDisplay() {
-	t, err := NewTimer(a.timerCnf)
-	if err != nil {
-		dialog.ShowError(err, a.menuWindow)
-		return
+func genIncrementingDigitStringSlice(start, size int) []string {
+	s := []string{}
+	for i := start; len(s) <= size; i++ {
+		s = append(s, strconv.Itoa(i))
 	}
-	a.timer = t
-	a.timerWindow = a.configureTimerWindow()
-	a.timer.Start()
-	a.swapWindow(a.menuWindow, a.timerWindow)
-
-	// Poll for timer display updates and interval name display updates
-	go func() {
-		for {
-			a.timerDisplay.Set(<-a.timer.timeRemaining)
-			select {
-			case intervalName := <-a.timer.intervalName:
-				a.intervalNameDisplay.Set(intervalName)
-			default:
-			}
-		}
-	}()
-	<-a.timer.Done()
-	a.swapWindow(a.timerWindow, a.menuWindow)
-}
-
-func (a *application) configureTimerWindow() fyne.Window {
-	w := a.gui.NewWindow("timer")
-
-	intervalName := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
-	timerDisplay := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
-	intervalName.Bind(a.intervalNameDisplay)
-	timerDisplay.Bind(a.timerDisplay)
-	timerVBox := container.New(layout.NewVBoxLayout(), intervalName, timerDisplay)
-
-	pauseButton := widget.NewButtonWithIcon("", theme.MediaPauseIcon(), func() {})
-	resumeButton := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {})
-	resumeButton.Disable()
-
-	pauseButton.OnTapped = func() {
-		pauseButton.Disable()
-		resumeButton.Enable()
-		a.timer.Pause()
-	}
-	resumeButton.OnTapped = func() {
-		pauseButton.Enable()
-		resumeButton.Disable()
-		a.timer.Resume()
-	}
-
-	skipButton := widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), a.handleSkipButton)
-	restartButton := widget.NewButtonWithIcon("", theme.MediaReplayIcon(), a.handleRestartButton)
-	stopButton := widget.NewButtonWithIcon("", theme.MediaStopIcon(), a.handleTimerStop)
-	vBox := container.New(layout.NewVBoxLayout(), timerVBox, pauseButton, resumeButton, skipButton, restartButton, stopButton)
-
-	w.SetContent(vBox)
-	return w
-}
-
-func (a *application) swapWindow(cur fyne.Window, next fyne.Window) {
-	next.Show()
-	cur.Close()
-}
-
-func (a *application) handlePauseButton() {
-	a.timer.Pause()
-}
-
-func (a *application) handleResumeButton() {
-	a.timer.Resume()
-}
-
-func (a *application) handleSkipButton() {
-	a.timer.Skip()
-}
-
-func (a *application) handleRestartButton() {
-	a.timer.Restart()
-}
-
-func (a *application) handleTimerStop() {
-	a.timer.Cancel()
-	a.menuWindow.Show()
-}
-
-func genDigitListOptions(max int) []string {
-	opts := []string{}
-	for i := 1; i <= max; i++ {
-		opts = append(opts, strconv.Itoa(i))
-	}
-	return opts
+	return s
 }
 
 func genMapListOptions(options map[string]string) []string {
@@ -259,7 +127,16 @@ func genMapListOptions(options map[string]string) []string {
 	return opts
 }
 
-func genDigitMap(s []string) map[string]int {
+func genDigitStringToIntMap(max int) map[string]int {
+	m := map[string]int{}
+	for i := 0; i <= max; i++ {
+		str, _ := strconv.Atoi(i)
+		m[str] = i
+	}
+	return m
+}
+
+func genDigitMapFromSlice(s []string) map[string]int {
 	dMap := map[string]int{}
 	startingVal, _ := strconv.Atoi(s[0])
 	for idx, val := range s {
