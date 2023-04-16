@@ -1,114 +1,133 @@
 package timer
 
 import (
+	"log"
 	"strconv"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2/app"
 	"github.com/gabriel-ross/timer-go/internal"
 )
 
 var DIGIT_MAP = genDigitStringToIntMap(100)
 
 type Config struct {
-	maxIntervals int
+	MaxIntervals int
+	MaxTimerMins int
+	MaxTimerSecs int
 }
 
 type application struct {
-	gui                  fyne.App
-	cnf                  Config
-	timerConfig          *internal.Config
-	timerNameDisplay     binding.String
-	timeRemainingDisplay binding.String
+	cnf                 Config
+	guiDriver           fyne.App
+	gui                 *gui
+	timerConfig         *internal.Config
+	timer               *internal.RepeatTimer
+	audioPlayer         player
+	intervalFinishSound audioStream
+	timerFinishSound    audioStream
+	sounds              map[string]audioStream
 }
 
-func (a *application) configureSimpleViewWindow() fyne.Window {
-	w := a.gui.NewWindow("simple timer")
-	timerName := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
-	timerName.Bind(a.timerNameDisplay)
-	timeRemaining := widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
-	timeRemaining.Bind(a.timeRemainingDisplay)
-	displayVBox := container.New(layout.NewVBoxLayout(), timerName, timeRemaining)
+func New(cnf Config, options ...func(*application)) *application {
+	newApplication := &application{
+		cnf:         cnf,
+		guiDriver:   app.New(),
+		timerConfig: &internal.Config{},
+	}
+	newApplication.gui = NewGui(newApplication)
 
-	intervalsSelect := widget.NewSelect(genIncrementingDigitStringSlice(1, a.cnf.maxIntervals), func(s string) {
-
-	})
-	resumeButton := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {})
-	pauseButton := widget.NewButtonWithIcon("", theme.MediaPauseIcon(), func() {})
-	skipButton := widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), func() {})
-	stopButton := widget.NewButtonWithIcon("", theme.MediaStopIcon(), func() {})
-	buttonGrid := container.New(layout.NewGridLayout(2), resumeButton, pauseButton, stopButton, skipButton)
-
-	windowVBox := container.New(layout.NewVBoxLayout(), displayVBox, layout.NewSpacer(), layout.NewSpacer(), buttonGrid)
-	w.SetContent(windowVBox)
-
-	return w
+	return newApplication
 }
 
-func (a *application) configureMenuWindow() fyne.Window {
-	w := a.gui.NewWindow("menu")
-
-	numIntervalOptions := widget.NewSelect(a.numIntervalOptions, func(s string) {
-		a.timerCnf.Intervals = a.numIntervalDigitMap[s]
-	})
-	numIntervalOptions.SetSelectedIndex(0)
-
-	soundOptions := widget.NewSelect(genMapListOptions(SOUND_PATHS), func(s string) {})
-	soundOptions.SetSelectedIndex(0)
-
-	intervalDurationMins := &widget.Select{
-		Options:     a.numIntervalOptions,
-		PlaceHolder: "MM",
-		OnChanged: func(s string) {
-			a.timerCnf.IntervalLength.Minutes = a.numIntervalDigitMap[s]
-		},
+// WithAudioFiles is a functional option for configuring the sound options
+// of an application. audios is a map where the key is the display name of the
+// sound in the application and the value is the file path where it can be
+// found. The application will crash if there are any errors registering
+// the audio files.
+func WithAudioFiles(audios map[string]string) func(*application) {
+	return func(a *application) {
+		for name, path := range audios {
+			a.MustRegisterSound(name, path)
+		}
 	}
-	intervalDurationSecs := &widget.Select{
-		Options:     a.numIntervalOptions,
-		PlaceHolder: "SS",
-		OnChanged: func(s string) {
-			a.timerCnf.IntervalLength.Seconds = a.numIntervalDigitMap[s]
-		},
-	}
-	intervalLength := container.New(layout.NewHBoxLayout(), intervalDurationMins, widget.NewLabel(":"), intervalDurationSecs)
+}
 
-	restDurationMins := &widget.Select{
-		Options:     a.numIntervalOptions,
-		PlaceHolder: "MM",
-		OnChanged: func(s string) {
-			a.timerCnf.Rest.Minutes = a.numIntervalDigitMap[s]
-		},
-	}
-	restDurationSecs := &widget.Select{
-		Options:     a.numIntervalOptions,
-		PlaceHolder: "SS",
-		OnChanged: func(s string) {
-			a.timerCnf.Rest.Seconds = a.numIntervalDigitMap[s]
-		},
-	}
-	restLength := container.New(layout.NewHBoxLayout(), restDurationMins, widget.NewLabel(":"), restDurationSecs)
+func (a *application) Start() {
+	w := a.gui.simpleViewWindow()
+	w.Show()
+	a.guiDriver.Run()
+}
 
-	restBeforeStart := widget.NewCheck("", func(checked bool) {
-		a.timerCnf.RestBeforeStart = checked
-	})
-
-	form := &widget.Form{
-		Items: []*widget.FormItem{ // we can specify items in the constructor
-			{Text: "Rest", Widget: restLength},
-			{Text: "Interval", Widget: intervalLength},
-			{Text: "# Intervals", Widget: numIntervalOptions},
-			{Text: "Sound", Widget: soundOptions},
-			{Text: "Rest before start", Widget: restBeforeStart},
-		},
+func (a *application) MustRegisterSound(name, path string) {
+	stream, err := a.audioPlayer.newAudioStream(path)
+	if err != nil {
+		log.Fatalf("error registering audio: %v", err)
 	}
-	start := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), func() {})
+	a.sounds[name] = stream
+}
 
-	w.SetContent(container.NewBorder(nil, start, nil, nil, form))
-	return w
+func (a *application) startTimer() {
+	a.timer = internal.NewRepeatCountdownTimer(*a.timerConfig)
+	done := make(chan bool)
+
+	go func() {
+		go a.pollForIntervalNameUpdates()
+		go a.pollForTimeRemainingUpdates()
+		go a.pollForIntervalFinishedAndPlaySound(a.intervalFinishSound)
+		<-done
+	}()
+
+	go func() {
+		a.timer.Start()
+		a.audioPlayer.playSound(a.timerFinishSound, nil)
+		done <- true
+		a.gui.reset()
+	}()
+}
+
+func (a *application) pollForIntervalNameUpdates() {
+	for {
+		a.gui.updateTimerName(<-a.timer.IntervalName())
+	}
+}
+
+func (a *application) pollForTimeRemainingUpdates() {
+	for {
+		a.gui.updateTimerDisplay(<-a.timer.TimeRemaining())
+	}
+}
+
+func (a *application) pollForIntervalFinishedAndPlaySound(audio audioStream) {
+	for {
+		<-a.timer.IntervalFinished()
+		a.audioPlayer.playSound(audio, nil)
+	}
+}
+
+func (a *application) handleTimerCancel() {
+	a.timer.Cancel()
+	a.gui.reset()
+}
+
+func (a *application) handleTimerPause() {
+	a.timer.Pause()
+}
+
+func (a *application) handleTimerResume() {
+	a.timer.Resume()
+}
+
+func (a *application) handleTimerSkip() {
+	a.timer.Skip()
+}
+
+func (a *application) soundOptions() []string {
+	opts := []string{}
+	for optionKey, _ := range a.sounds {
+		opts = append(opts, optionKey)
+	}
+	return opts
 }
 
 func genIncrementingDigitStringSlice(start, size int) []string {
@@ -119,33 +138,10 @@ func genIncrementingDigitStringSlice(start, size int) []string {
 	return s
 }
 
-func genMapListOptions(options map[string]string) []string {
-	opts := []string{}
-	for name := range options {
-		opts = append(opts, name)
-	}
-	return opts
-}
-
 func genDigitStringToIntMap(max int) map[string]int {
 	m := map[string]int{}
 	for i := 0; i <= max; i++ {
-		str, _ := strconv.Atoi(i)
-		m[str] = i
+		m[strconv.Itoa(i)] = i
 	}
 	return m
-}
-
-func genDigitMapFromSlice(s []string) map[string]int {
-	dMap := map[string]int{}
-	startingVal, _ := strconv.Atoi(s[0])
-	for idx, val := range s {
-		dMap[val] = idx + startingVal
-	}
-	return dMap
-}
-
-func validateDigitString(s string) error {
-	_, err := strconv.Atoi(s)
-	return err
 }
