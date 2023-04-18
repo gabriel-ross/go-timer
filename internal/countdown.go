@@ -19,7 +19,7 @@ type Config struct {
 type RepeatTimer struct {
 	cnf               Config
 	shouldRest        bool
-	shouldCancel      bool
+	cancel            bool
 	intervalNameC     chan string
 	timeRemainingC    chan string
 	intervalFinishedC chan bool
@@ -41,7 +41,7 @@ func NewRepeatCountdownTimer(cnf Config) *RepeatTimer {
 	return &RepeatTimer{
 		cnf:               cnf,
 		shouldRest:        cnf.RestBeforeStart,
-		shouldCancel:      false,
+		cancel:            false,
 		intervalNameC:     make(chan string, 100),
 		timeRemainingC:    make(chan string, 100),
 		intervalFinishedC: make(chan bool),
@@ -60,7 +60,7 @@ func (t *RepeatTimer) Start() {
 	}
 
 	interval := 1
-	for interval <= t.cnf.Intervals && !t.shouldCancel {
+	for interval <= t.cnf.Intervals && !t.cancel {
 		if t.shouldRest {
 			writeStringChannel(t.intervalNameC, "Rest")
 			t.countdownTimer.runInterval(t.timeRemainingC, t.cnf.RestMinutes, t.cnf.RestSeconds)
@@ -77,7 +77,7 @@ func (t *RepeatTimer) Start() {
 
 // reset resets all RepeatTimer flags and clears all channels.
 func (t *RepeatTimer) reset() {
-	t.shouldCancel = false
+	t.cancel = false
 	t.shouldRest = false
 	t.intervalNameC = make(chan string, 100)
 	t.timeRemainingC = make(chan string, 100)
@@ -100,7 +100,7 @@ func (t *RepeatTimer) IntervalFinished() <-chan bool {
 // Cancel cancels the timer and writes zero time remaining to the
 // time remaining channel.
 func (t *RepeatTimer) Cancel() {
-	t.shouldCancel = true
+	t.cancel = true
 	t.countdownTimer.cancel()
 	writeStringChannel(t.timeRemainingC, "00:00")
 }

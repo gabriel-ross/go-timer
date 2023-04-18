@@ -6,15 +6,21 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"github.com/faiface/beep"
 	"github.com/gabriel-ross/timer-go/internal"
 )
 
+// Map for quick conversion of digit strings to int.
 var DIGIT_MAP = genDigitStringToIntMap(100)
 
 type Config struct {
-	MaxIntervals int
-	MaxTimerMins int
-	MaxTimerSecs int
+	SpeakerSampleRate           int // Speaker ratio in HZ
+	AudioBufferRatio            int // The ratio of (audio buffer size) / (sample rate)
+	MaxIntervals                int
+	MaxTimerMins                int
+	MaxTimerSecs                int
+	InitialIntervalEndSoundName string
+	InitialTimerEndSoundName    string
 }
 
 type application struct {
@@ -23,6 +29,7 @@ type application struct {
 	gui                 *gui
 	timerConfig         *internal.Config
 	timer               *internal.RepeatTimer
+	speakerSampleRate   beep.SampleRate
 	audioPlayer         player
 	intervalFinishSound audioStream
 	timerFinishSound    audioStream
@@ -30,11 +37,35 @@ type application struct {
 }
 
 func New(cnf Config, options ...func(*application)) *application {
+	var err error
 	newApplication := &application{
-		cnf:         cnf,
-		guiDriver:   app.New(),
-		timerConfig: &internal.Config{},
+		cnf:               cnf,
+		guiDriver:         app.New(),
+		timerConfig:       &internal.Config{},
+		speakerSampleRate: beep.SampleRate(cnf.SpeakerSampleRate),
+		sounds:            map[string]audioStream{},
 	}
+
+	newApplication.audioPlayer, err = NewPlayer(newApplication.speakerSampleRate, cnf.AudioBufferRatio)
+	if err != nil {
+		log.Fatalf("error initializing speaker: %v", err)
+	}
+	newApplication.sounds["None"] = newApplication.audioPlayer.NilAudioStream(newApplication.speakerSampleRate)
+	var exists bool
+	newApplication.intervalFinishSound, exists = newApplication.sounds[cnf.InitialIntervalEndSoundName]
+	if !exists {
+		newApplication.intervalFinishSound = newApplication.sounds["None"]
+		newApplication.cnf.InitialIntervalEndSoundName = "None"
+	}
+	newApplication.timerFinishSound, exists = newApplication.sounds[cnf.InitialTimerEndSoundName]
+	if !exists {
+		newApplication.timerFinishSound = newApplication.sounds["None"]
+	}
+
+	for _, option := range options {
+		option(newApplication)
+	}
+
 	newApplication.gui = NewGui(newApplication)
 
 	return newApplication
@@ -48,60 +79,88 @@ func New(cnf Config, options ...func(*application)) *application {
 func WithAudioFiles(audios map[string]string) func(*application) {
 	return func(a *application) {
 		for name, path := range audios {
-			a.MustRegisterSound(name, path)
+			if err := a.RegisterSound(name, path); err != nil {
+				log.Printf("error decoding audio file: %v\n", err)
+			}
 		}
 	}
 }
 
-func (a *application) Start() {
-	w := a.gui.simpleViewWindow()
-	w.Show()
-	a.guiDriver.Run()
+// Run runs the application.
+func (a *application) Run() {
+	a.gui.simpleViewWindow().ShowAndRun()
 }
 
-func (a *application) MustRegisterSound(name, path string) {
-	stream, err := a.audioPlayer.newAudioStream(path)
+// OnClose handles cleanup and releases resources when an application is closed.
+func (a *application) OnClose() {
+	var err error
+	for name, audio := range a.sounds {
+		if err = audio.stream.Close(); err != nil {
+			log.Printf("error closing audio %s: %v", name, err)
+		}
+	}
+}
+
+// RegisterSound decodes the mp3 file at path and registers it to the
+// application's sound map.
+func (a *application) RegisterSound(name, path string) error {
+	stream, err := a.audioPlayer.NewAudioStream(path)
 	if err != nil {
-		log.Fatalf("error registering audio: %v", err)
+		return err
 	}
 	a.sounds[name] = stream
+	return nil
 }
 
-func (a *application) startTimer() {
+func (a *application) runTimer() {
 	a.timer = internal.NewRepeatCountdownTimer(*a.timerConfig)
 	done := make(chan bool)
 
-	go func() {
-		go a.pollForIntervalNameUpdates()
-		go a.pollForTimeRemainingUpdates()
-		go a.pollForIntervalFinishedAndPlaySound(a.intervalFinishSound)
-		<-done
-	}()
+	doneNameUpdates := make(chan bool)
+	doneTimeRemaining := make(chan bool)
+	doneIntervalFinished := make(chan bool)
+	go a.pollForIntervalNameUpdates(doneNameUpdates)
+	go a.pollForTimeRemainingUpdates(doneTimeRemaining)
+	go a.pollForIntervalFinishedAndPlaySound(doneIntervalFinished, a.intervalFinishSound)
 
 	go func() {
 		a.timer.Start()
-		a.audioPlayer.playSound(a.timerFinishSound, nil)
+		a.audioPlayer.PlaySound(a.speakerSampleRate, a.timerFinishSound, nil)
 		done <- true
 		a.gui.reset()
 	}()
 }
 
-func (a *application) pollForIntervalNameUpdates() {
+func (a *application) pollForIntervalNameUpdates(done <-chan bool) {
 	for {
-		a.gui.updateTimerName(<-a.timer.IntervalName())
+		select {
+		case name := <-a.timer.IntervalName():
+			a.gui.updateTimerName(name)
+		case <-done:
+			return
+		}
 	}
 }
 
-func (a *application) pollForTimeRemainingUpdates() {
+func (a *application) pollForTimeRemainingUpdates(done <-chan bool) {
 	for {
-		a.gui.updateTimerDisplay(<-a.timer.TimeRemaining())
+		select {
+		case update := <-a.timer.TimeRemaining():
+			a.gui.updateTimerDisplay(update)
+		case <-done:
+			return
+		}
 	}
 }
 
-func (a *application) pollForIntervalFinishedAndPlaySound(audio audioStream) {
+func (a *application) pollForIntervalFinishedAndPlaySound(done <-chan bool, audio audioStream) {
 	for {
-		<-a.timer.IntervalFinished()
-		a.audioPlayer.playSound(audio, nil)
+		select {
+		case <-a.timer.IntervalFinished():
+			a.audioPlayer.PlaySound(a.speakerSampleRate, audio, nil)
+		case <-done:
+			return
+		}
 	}
 }
 
@@ -124,7 +183,7 @@ func (a *application) handleTimerSkip() {
 
 func (a *application) soundOptions() []string {
 	opts := []string{}
-	for optionKey, _ := range a.sounds {
+	for optionKey := range a.sounds {
 		opts = append(opts, optionKey)
 	}
 	return opts

@@ -59,6 +59,7 @@ func (g *gui) simpleViewWindow() fyne.Window {
 	restBeforeStartLabel := g.newCenteredText("Rest before start", color.Black)
 	g.intervals = widget.NewSelect(genIncrementingDigitStringSlice(1, g.application.cnf.MaxIntervals), g.handleIntervalsSelect)
 	g.sounds = widget.NewSelect(g.application.soundOptions(), g.handleSoundSelect)
+	g.sounds.SetSelected(g.application.cnf.InitialIntervalEndSoundName)
 	g.intervalDurationMin = &widget.Select{
 		Options:     genIncrementingDigitStringSlice(0, g.application.cnf.MaxTimerSecs),
 		PlaceHolder: "MM",
@@ -174,7 +175,7 @@ func (g *gui) handleStartButtonTap() {
 	g.startResumeButton.Disable()
 	g.skipButton.Enable()
 	g.startResumeButton.OnTapped = g.handleResumeButtonTap
-	g.application.startTimer()
+	g.application.runTimer()
 }
 
 func (g *gui) handlePauseButtonTap() {
