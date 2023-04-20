@@ -21,4 +21,56 @@ func main() {
 		InitialTimerEndSoundName:    "Chime",
 	}, timer.WithAudioFiles(AUDIO_FILES))
 	a.Run()
+
+	// t := internal.NewRepeatCountdownTimer(internal.Config{
+	// 	Intervals:       10,
+	// 	IntervalMinutes: 0,
+	// 	IntervalSeconds: 10,
+	// 	RestEnabled:     true,
+	// 	RestMinutes:     0,
+	// 	RestSeconds:     5,
+	// 	RestBeforeStart: false,
+	// })
+	// done := false
+
+	// go func() {
+	// 	// poll for time remaining updates
+	// 	go func() {
+	// 		for !done {
+	// 			select {
+	// 			case timeRemaining := <-t.TimeRemaining():
+	// 				fmt.Println("time remaining: ", timeRemaining)
+	// 			default:
+	// 			}
+	// 		}
+	// 	}()
+
+	// 	// poll for interval name updates
+	// 	go func() {
+	// 		for !done {
+	// 			select {
+	// 			case intervalName := <-t.IntervalName():
+	// 				fmt.Println(intervalName)
+	// 			default:
+	// 			}
+	// 		}
+	// 	}()
+	// }()
+
+	// go func() {
+	// 	time.Sleep(3 * time.Second)
+	// 	// fmt.Println("cancelling...")
+	// 	// t.Cancel()
+	// 	fmt.Println("pausing...")
+	// 	t.Pause()
+	// 	time.Sleep(3 * time.Second)
+	// 	fmt.Println("Resuming")
+	// 	t.Resume()
+	// }()
+
+	// t.Start()
+
+	// done = true
+
+	// time.Sleep(3 * time.Second)
 }

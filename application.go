@@ -114,59 +114,51 @@ func (a *application) RegisterSound(name, path string) error {
 
 func (a *application) runTimer() {
 	a.timer = internal.NewRepeatCountdownTimer(*a.timerConfig)
-	done := make(chan bool)
+	done := false
 
-	doneNameUpdates := make(chan bool)
-	doneTimeRemaining := make(chan bool)
-	doneIntervalFinished := make(chan bool)
-	go a.pollForIntervalNameUpdates(doneNameUpdates)
-	go a.pollForTimeRemainingUpdates(doneTimeRemaining)
-	go a.pollForIntervalFinishedAndPlaySound(doneIntervalFinished, a.intervalFinishSound)
+	// poll for interval name update
+	go func() {
+		for !done {
+			select {
+			case name := <-a.timer.IntervalName():
+				a.gui.updateTimerName(name)
+			default:
+			}
+		}
+	}()
+
+	// poll for time remaining updates
+	go func() {
+		for !done {
+			select {
+			case update := <-a.timer.TimeRemaining():
+				a.gui.updateTimerDisplay(update)
+			default:
+			}
+		}
+	}()
+
+	// poll for interval finished updates and play sound
+	go func() {
+		for !done {
+			select {
+			case <-a.timer.IntervalFinished():
+				a.audioPlayer.PlaySound(a.speakerSampleRate, a.intervalFinishSound, nil)
+			default:
+			}
+		}
+	}()
 
 	go func() {
 		a.timer.Start()
 		a.audioPlayer.PlaySound(a.speakerSampleRate, a.timerFinishSound, nil)
-		done <- true
+		done = true
 		a.gui.reset()
 	}()
 }
 
-func (a *application) pollForIntervalNameUpdates(done <-chan bool) {
-	for {
-		select {
-		case name := <-a.timer.IntervalName():
-			a.gui.updateTimerName(name)
-		case <-done:
-			return
-		}
-	}
-}
-
-func (a *application) pollForTimeRemainingUpdates(done <-chan bool) {
-	for {
-		select {
-		case update := <-a.timer.TimeRemaining():
-			a.gui.updateTimerDisplay(update)
-		case <-done:
-			return
-		}
-	}
-}
-
-func (a *application) pollForIntervalFinishedAndPlaySound(done <-chan bool, audio audioStream) {
-	for {
-		select {
-		case <-a.timer.IntervalFinished():
-			a.audioPlayer.PlaySound(a.speakerSampleRate, audio, nil)
-		case <-done:
-			return
-		}
-	}
-}
-
 func (a *application) handleTimerCancel() {
 	a.timer.Cancel()
-	a.gui.reset()
 }
 
 func (a *application) handleTimerPause() {

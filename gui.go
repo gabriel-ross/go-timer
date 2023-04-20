@@ -61,24 +61,24 @@ func (g *gui) simpleViewWindow() fyne.Window {
 	g.sounds = widget.NewSelect(g.application.soundOptions(), g.handleSoundSelect)
 	g.sounds.SetSelected(g.application.cnf.InitialIntervalEndSoundName)
 	g.intervalDurationMin = &widget.Select{
-		Options:     genIncrementingDigitStringSlice(0, g.application.cnf.MaxTimerSecs),
+		Options:     genIncrementingDigitStringSlice(0, g.application.cnf.MaxTimerMins),
 		PlaceHolder: "MM",
 		OnChanged:   g.handleIntervalMinuteSelect,
 	}
 	g.intervalDurationSec = &widget.Select{
 		Options:     genIncrementingDigitStringSlice(0, g.application.cnf.MaxTimerSecs),
 		PlaceHolder: "SS",
-		OnChanged:   g.handleIntervalMinuteSelect,
+		OnChanged:   g.handleIntervalSecondSelect,
 	}
 	g.restDurationMin = &widget.Select{
-		Options:     genIncrementingDigitStringSlice(0, g.application.cnf.MaxTimerSecs),
+		Options:     genIncrementingDigitStringSlice(0, g.application.cnf.MaxTimerMins),
 		PlaceHolder: "MM",
 		OnChanged:   g.handleRestMinuteSelect,
 	}
 	g.restDurationSec = &widget.Select{
 		Options:     genIncrementingDigitStringSlice(0, g.application.cnf.MaxTimerSecs),
 		PlaceHolder: "SS",
-		OnChanged:   g.handleRestMinuteSelect,
+		OnChanged:   g.handleRestSecondSelect,
 	}
 	interval := container.New(layout.NewHBoxLayout(), g.intervalDurationMin, widget.NewLabel(":"), g.intervalDurationSec)
 	rest := container.New(layout.NewHBoxLayout(), g.restDurationMin, widget.NewLabel(":"), g.restDurationSec)
@@ -91,7 +91,7 @@ func (g *gui) simpleViewWindow() fyne.Window {
 		restBeforeStartLabel, g.restBeforeStart,
 		soundsLabel, g.sounds)
 
-	g.stopButton = widget.NewButtonWithIcon("", theme.MediaStopIcon(), g.reset)
+	g.stopButton = widget.NewButtonWithIcon("", theme.MediaStopIcon(), g.handleStopButtonTap)
 	g.pauseButton = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), g.handlePauseButtonTap)
 	g.startResumeButton = widget.NewButtonWithIcon("", theme.MediaPlayIcon(), g.handleStartButtonTap)
 	g.skipButton = widget.NewButtonWithIcon("", theme.MediaFastForwardIcon(), g.handleSkipButtonTap)
@@ -108,6 +108,7 @@ func (g *gui) simpleViewWindow() fyne.Window {
 }
 
 func (g *gui) reset() {
+
 	g.updateTimerName(DEFAULT_TIMER_NAME)
 	g.updateTimerDisplay(DEFAULT_TIMER_DISPLAY)
 	g.intervals.Enable()
@@ -181,14 +182,21 @@ func (g *gui) handleStartButtonTap() {
 func (g *gui) handlePauseButtonTap() {
 	g.pauseButton.Disable()
 	g.startResumeButton.Enable()
+	g.application.handleTimerPause()
 }
 
 func (g *gui) handleResumeButtonTap() {
+	g.pauseButton.Enable()
 	g.application.handleTimerResume()
 }
 
 func (g *gui) handleSkipButtonTap() {
 	g.application.handleTimerSkip()
+}
+
+func (g *gui) handleStopButtonTap() {
+	g.application.handleTimerCancel()
+	g.reset()
 }
 
 func (g gui) newCenteredText(text string, color color.Color) *canvas.Text {
