@@ -6,28 +6,43 @@
 	<dict>
 		<key>Info.plist</key>
 		<data>
-		EWe2Zeos4GjzmcuKNeYVB9xO4Ag=
+		zY36Hfivmxrs+C8gEg76H1nCX9w=
 		</data>
 		<key>PkgInfo</key>
 		<data>
 		n57qDP4tZfLD1rCS43W0B4LQjzE=
 		</data>
+		<key>assets/iphone-ding-sound.mp3</key>
+		<data>
+		XmQWviC9dSeLvXTli9ly4fMboVk=
+		</data>
 		<key>embedded.mobileprovision</key>
 		<data>
-		+f7a30RN0u+ElcImzonGJYmLs7c=
+		xjSdw/ZPduoHwLicQvbV9MvaTRo=
 		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>assets/iphone-ding-sound.mp3</key>
+		<dict>
+			<key>hash</key>
+			<data>
+			XmQWviC9dSeLvXTli9ly4fMboVk=
+			</data>
+			<key>hash2</key>
+			<data>
+			sjmMw4JD9qNRDFa+gXywKO8uDCXturYXURDeX7hi66o=
+			</data>
+		</dict>
 		<key>embedded.mobileprovision</key>
 		<dict>
 			<key>hash</key>
 			<data>
-			+f7a30RN0u+ElcImzonGJYmLs7c=
+			xjSdw/ZPduoHwLicQvbV9MvaTRo=
 			</data>
 			<key>hash2</key>
 			<data>
-			8YoFtVNuaXT7ktBflkGu3MrHs1znMnBBrJlCHZz2+O0=
+			9qIiHAIBrU9oyFoxIuA2q8M/SKD8ni/SgYuQ0mk1pkM=
 			</data>
 		</dict>
 	</dict>

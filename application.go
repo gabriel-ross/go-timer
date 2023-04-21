@@ -1,4 +1,4 @@
-package timer
+package main
 
 import (
 	"log"
@@ -71,6 +71,12 @@ func New(cnf Config, options ...func(*application)) *application {
 	return newApplication
 }
 
+func WithInitialTimerConfig(cnf internal.Config) func(*application) {
+	return func(a *application) {
+		a.timerConfig = &cnf
+	}
+}
+
 // WithAudioFiles is a functional option for configuring the sound options
 // of an application. audios is a map where the key is the display name of the
 // sound in the application and the value is the file path where it can be
@@ -99,6 +105,7 @@ func (a *application) OnClose() {
 			log.Printf("error closing audio %s: %v", name, err)
 		}
 	}
+	// TODO: save current timer config
 }
 
 // RegisterSound decodes the mp3 file at path and registers it to the

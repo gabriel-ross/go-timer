@@ -1,19 +1,43 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	Intervals       int
-	IntervalMinutes int64
-	IntervalSeconds int64
-	RestEnabled     bool
-	RestMinutes     int64
-	RestSeconds     int64
-	RestBeforeStart bool
+	Intervals       int   `json:"intervals"`
+	IntervalMinutes int64 `json:"intervalMinutes"`
+	IntervalSeconds int64 `json:"intervalSeconds"`
+	RestEnabled     bool  `json:"restEnabled"`
+	RestMinutes     int64 `json:"restMinutes"`
+	RestSeconds     int64 `json:"restSeconds"`
+	RestBeforeStart bool  `json:"restBeforeStart"`
+}
+
+func NewConfigFromFile(path string) (Config, error) {
+	var err error
+	f, err := os.Open(path)
+	if err != nil {
+		return Config{}, err
+	}
+
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		return Config{}, err
+	}
+
+	var cnf Config
+	err = json.Unmarshal(raw, &cnf)
+	if err != nil {
+		return Config{}, err
+	}
+
+	return cnf, nil
 }
 
 type RepeatTimer struct {
